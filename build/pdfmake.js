@@ -15064,19 +15064,83 @@
 	    });
 	  }
 
+		function resetXYs(result) {
+			_.each(result.linearNodeList, function (node) {
+				node.resetXY();
+			});
+		}
+
 	  this.docMeasure = new DocMeasure(fontProvider, styleDictionary, defaultStyle, this.imageMeasure, this.tableLayouts, images);
 
-
-	  function resetXYs(result) {
-	    _.each(result.linearNodeList, function (node) {
-	      node.resetXY();
-	    });
-	  }
+		var untouchedDocStructure = _.cloneDeep(docStructure);
 
 	  var result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+
+		var self = this;
+		docStructure.forEach(function (item, itemIndex) {
+			if (item.table) {
+				var untouchedNewTableBody = [];
+				var untouchedNewTableWidths = [];
+				var newTableBody = [];
+				var newTableWidths = [];
+
+				// TODO: Figure out correct way to get available width
+				var availableWidth = 500 - item._offsets.total;
+				while (ColumnCalculator.columnsAreTooWide(item.table.widths, availableWidth)) {
+					// Figure out how many columns should be sliced (we don't want to mess up colSpans)
+					var slices = item.table.body[0].length-1;
+					while (item.table.body[0][slices]._span) {
+						slices--;
+					}
+
+					// Slice and dice!
+					item.table.body.forEach(function (row, i) {
+						if (newTableBody.length > i) {
+							newTableBody[i] = newTableBody[i].concat(item.table.body[i].slice(slices, row.length));
+							untouchedNewTableBody[i] = untouchedNewTableBody[i].concat(untouchedDocStructure[itemIndex].table.body[i].slice(slices, row.length));
+						} else {
+							newTableBody.push(item.table.body[i].slice(slices, row.length));
+							untouchedNewTableBody.push(untouchedDocStructure[itemIndex].table.body[i].slice(slices, row.length));
+						}
+
+						item.table.body[i] = item.table.body[i].slice(0, slices);
+						untouchedDocStructure[itemIndex].table.body[i] = untouchedDocStructure[itemIndex].table.body[i].slice(0, slices);
+					});
+
+					// Don't forget the widths array as well!
+					newTableWidths = newTableWidths.concat(item.table.widths.slice(slices, item.table.widths.length));
+					untouchedNewTableWidths = untouchedNewTableWidths.concat(untouchedDocStructure[itemIndex].table.widths.slice(slices, untouchedDocStructure[itemIndex].table.widths.length));
+					item.table.widths = item.table.widths.slice(0, slices);
+					untouchedDocStructure[itemIndex].table.widths = untouchedDocStructure[itemIndex].table.widths.slice(0, slices);
+				}
+
+				if (newTableBody.length && newTableWidths.length) {
+					var headerColumns = item.table.headerColumns || 0;
+					newTableBody.forEach(function (row, i) {
+						newTableBody[i] = item.table.body[i].slice(0, headerColumns).concat(newTableBody[i]);
+						untouchedNewTableBody[i] = untouchedDocStructure[itemIndex].table.body[i].slice(0, headerColumns).concat(untouchedNewTableBody[i]);
+					});
+					newTableWidths = item.table.widths.slice(0, headerColumns).concat(newTableWidths);
+					untouchedNewTableWidths = untouchedDocStructure[itemIndex].table.widths.slice(0, headerColumns).concat(untouchedNewTableWidths);
+
+					var newItem = _.cloneDeep(item);
+					newItem.table.body = newTableBody;
+					newItem.table.widths = newTableWidths;
+					docStructure.splice(itemIndex+1, 0, newItem);
+
+					var untouchedNewItem = _.cloneDeep(untouchedDocStructure[itemIndex]);
+					untouchedNewItem.table.body = untouchedNewTableBody;
+					untouchedNewItem.table.widths = untouchedNewTableWidths;
+					untouchedDocStructure.splice(itemIndex+1, 0, untouchedNewItem);
+				}
+			}
+		});
+
+		result = this.tryLayoutDocument(untouchedDocStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+
 	  while(addPageBreaksIfNecessary(result.linearNodeList, result.pages)){
 	    resetXYs(result);
-	    result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+	    result = this.tryLayoutDocument(untouchedDocStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
 	  }
 
 		return result.pages;
@@ -15467,18 +15531,18 @@
 	LayoutBuilder.prototype.processTable = function(tableNode) {
 	  var processor = new TableProcessor(tableNode);
 
-	  processor.beginTable(this.writer);
+		processor.beginTable(this.writer);
 
-	  for(var i = 0, l = tableNode.table.body.length; i < l; i++) {
-	    processor.beginRow(i, this.writer);
+		for(var i = 0, l = tableNode.table.body.length; i < l; i++) {
+			processor.beginRow(i, this.writer);
 
-	    var result = this.processRow(tableNode.table.body[i], tableNode.table.widths, tableNode._offsets.offsets, tableNode.table.body, i);
-	    addAll(tableNode.positions, result.positions);
+			var result = this.processRow(tableNode.table.body[i], tableNode.table.widths, tableNode._offsets.offsets, tableNode.table.body, i);
+			addAll(tableNode.positions, result.positions);
 
-	    processor.endRow(i, this.writer, result.pageBreaks);
-	  }
+			processor.endRow(i, this.writer, result.pageBreaks);
+		}
 
-	  processor.endTable(this.writer);
+		processor.endTable(this.writer);
 	};
 
 	// leafs (texts)
@@ -16569,6 +16633,49 @@
 	/* jslint node: true */
 	'use strict';
 
+	function columnsAreTooWide(columns, availableWidth) {
+		var autoColumns = [],
+			autoMin = 0, autoMax = 0,
+			starColumns = [],
+			starMaxMin = 0,
+			starMaxMax = 0,
+			fixedColumns = [],
+			initial_availableWidth = availableWidth;
+
+		columns.forEach(function(column) {
+			if (isAutoColumn(column)) {
+				autoColumns.push(column);
+				autoMin += column._minWidth;
+				autoMax += column._maxWidth;
+			} else if (isStarColumn(column)) {
+				starColumns.push(column);
+				starMaxMin = Math.max(starMaxMin, column._minWidth);
+				starMaxMax = Math.max(starMaxMax, column._maxWidth);
+			} else {
+				fixedColumns.push(column);
+			}
+		});
+
+		fixedColumns.forEach(function(col) {
+			// width specified as %
+			if (typeof col.width === 'string' && /\d+%/.test(col.width) ) {
+				col.width = parseFloat(col.width)*initial_availableWidth/100;
+			}
+			if (col.width < (col._minWidth) && col.elasticWidth) {
+				col._calcWidth = col._minWidth;
+			} else {
+				col._calcWidth = col.width;
+			}
+
+			availableWidth -= col._calcWidth;
+		});
+
+		var minW = autoMin + starMaxMin * starColumns.length;
+		//var maxW = autoMax + starMaxMax * starColumns.length;
+
+		return minW >= availableWidth;
+	}
+
 	function buildColumnWidths(columns, availableWidth) {
 		var autoColumns = [],
 			autoMin = 0, autoMax = 0,
@@ -16696,6 +16803,7 @@
 	* @private
 	*/
 	module.exports = {
+		columnsAreTooWide: columnsAreTooWide,
 		buildColumnWidths: buildColumnWidths,
 		measureMinMax: measureMinMax,
 		isAutoColumn: isAutoColumn,

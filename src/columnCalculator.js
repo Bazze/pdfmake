@@ -1,6 +1,49 @@
 /* jslint node: true */
 'use strict';
 
+function columnsAreTooWide(columns, availableWidth) {
+	var autoColumns = [],
+		autoMin = 0, autoMax = 0,
+		starColumns = [],
+		starMaxMin = 0,
+		starMaxMax = 0,
+		fixedColumns = [],
+		initial_availableWidth = availableWidth;
+
+	columns.forEach(function(column) {
+		if (isAutoColumn(column)) {
+			autoColumns.push(column);
+			autoMin += column._minWidth;
+			autoMax += column._maxWidth;
+		} else if (isStarColumn(column)) {
+			starColumns.push(column);
+			starMaxMin = Math.max(starMaxMin, column._minWidth);
+			starMaxMax = Math.max(starMaxMax, column._maxWidth);
+		} else {
+			fixedColumns.push(column);
+		}
+	});
+
+	fixedColumns.forEach(function(col) {
+		// width specified as %
+		if (typeof col.width === 'string' && /\d+%/.test(col.width) ) {
+			col.width = parseFloat(col.width)*initial_availableWidth/100;
+		}
+		if (col.width < (col._minWidth) && col.elasticWidth) {
+			col._calcWidth = col._minWidth;
+		} else {
+			col._calcWidth = col.width;
+		}
+
+		availableWidth -= col._calcWidth;
+	});
+
+	var minW = autoMin + starMaxMin * starColumns.length;
+	//var maxW = autoMax + starMaxMax * starColumns.length;
+
+	return minW >= availableWidth;
+}
+
 function buildColumnWidths(columns, availableWidth) {
 	var autoColumns = [],
 		autoMin = 0, autoMax = 0,
@@ -128,6 +171,7 @@ function measureMinMax(columns) {
 * @private
 */
 module.exports = {
+	columnsAreTooWide: columnsAreTooWide,
 	buildColumnWidths: buildColumnWidths,
 	measureMinMax: measureMinMax,
 	isAutoColumn: isAutoColumn,
