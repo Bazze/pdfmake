@@ -15072,15 +15072,10 @@
 
 	  this.docMeasure = new DocMeasure(fontProvider, styleDictionary, defaultStyle, this.imageMeasure, this.tableLayouts, images);
 
-		var untouchedDocStructure = _.cloneDeep(docStructure);
-
 	  var result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
 
-		var self = this;
 		docStructure.forEach(function (item, itemIndex) {
 			if (item.table) {
-				var untouchedNewTableBody = [];
-				var untouchedNewTableWidths = [];
 				var newTableBody = [];
 				var newTableWidths = [];
 
@@ -15096,51 +15091,40 @@
 					// Slice and dice!
 					item.table.body.forEach(function (row, i) {
 						if (newTableBody.length > i) {
-							newTableBody[i] = newTableBody[i].concat(item.table.body[i].slice(slices, row.length));
-							untouchedNewTableBody[i] = untouchedNewTableBody[i].concat(untouchedDocStructure[itemIndex].table.body[i].slice(slices, row.length));
+							newTableBody[i] = item.table.body[i].slice(slices, row.length).concat(newTableBody[i]);
 						} else {
 							newTableBody.push(item.table.body[i].slice(slices, row.length));
-							untouchedNewTableBody.push(untouchedDocStructure[itemIndex].table.body[i].slice(slices, row.length));
 						}
 
 						item.table.body[i] = item.table.body[i].slice(0, slices);
-						untouchedDocStructure[itemIndex].table.body[i] = untouchedDocStructure[itemIndex].table.body[i].slice(0, slices);
 					});
 
 					// Don't forget the widths array as well!
-					newTableWidths = newTableWidths.concat(item.table.widths.slice(slices, item.table.widths.length));
-					untouchedNewTableWidths = untouchedNewTableWidths.concat(untouchedDocStructure[itemIndex].table.widths.slice(slices, untouchedDocStructure[itemIndex].table.widths.length));
+					newTableWidths = item.table.widths.slice(slices, item.table.widths.length).concat(newTableWidths);
 					item.table.widths = item.table.widths.slice(0, slices);
-					untouchedDocStructure[itemIndex].table.widths = untouchedDocStructure[itemIndex].table.widths.slice(0, slices);
 				}
 
 				if (newTableBody.length && newTableWidths.length) {
 					var headerColumns = item.table.headerColumns || 0;
 					newTableBody.forEach(function (row, i) {
 						newTableBody[i] = item.table.body[i].slice(0, headerColumns).concat(newTableBody[i]);
-						untouchedNewTableBody[i] = untouchedDocStructure[itemIndex].table.body[i].slice(0, headerColumns).concat(untouchedNewTableBody[i]);
 					});
 					newTableWidths = item.table.widths.slice(0, headerColumns).concat(newTableWidths);
-					untouchedNewTableWidths = untouchedDocStructure[itemIndex].table.widths.slice(0, headerColumns).concat(untouchedNewTableWidths);
 
 					var newItem = _.cloneDeep(item);
 					newItem.table.body = newTableBody;
 					newItem.table.widths = newTableWidths;
 					docStructure.splice(itemIndex+1, 0, newItem);
-
-					var untouchedNewItem = _.cloneDeep(untouchedDocStructure[itemIndex]);
-					untouchedNewItem.table.body = untouchedNewTableBody;
-					untouchedNewItem.table.widths = untouchedNewTableWidths;
-					untouchedDocStructure.splice(itemIndex+1, 0, untouchedNewItem);
 				}
 			}
 		});
 
-		result = this.tryLayoutDocument(untouchedDocStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+		resetXYs(result);
+		result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
 
 	  while(addPageBreaksIfNecessary(result.linearNodeList, result.pages)){
 	    resetXYs(result);
-	    result = this.tryLayoutDocument(untouchedDocStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+	    result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
 	  }
 
 		return result.pages;
