@@ -148,9 +148,9 @@ LayoutBuilder.prototype.layoutDocument = function (docStructure, fontProvider, s
 			if (newTableBody.length && newTableWidths.length) {
 				var headerColumns = item.table.headerColumns || 0;
 				newTableBody.forEach(function (row, i) {
-					newTableBody[i] = item.table.body[i].slice(0, headerColumns).concat(newTableBody[i]);
+					newTableBody[i] = _.cloneDeep(item.table.body[i].slice(0, headerColumns)).concat(newTableBody[i]);
 				});
-				newTableWidths = item.table.widths.slice(0, headerColumns).concat(newTableWidths);
+				newTableWidths = _.cloneDeep(item.table.widths.slice(0, headerColumns)).concat(newTableWidths);
 
 				var newItem = _.cloneDeep(item);
 				newItem.table.body = newTableBody;
