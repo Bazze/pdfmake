@@ -115,7 +115,8 @@ LayoutBuilder.prototype.layoutDocument = function (docStructure, fontProvider, s
 
   var result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
 
-	docStructure.forEach(function (item, itemIndex) {
+	for (var itemIndex = 0; itemIndex < docStructure.length; itemIndex++) {
+		var item = docStructure[itemIndex];
 		if (item.table) {
 			var newTableBody = [];
 			var newTableWidths = [];
@@ -145,8 +146,8 @@ LayoutBuilder.prototype.layoutDocument = function (docStructure, fontProvider, s
 				item.table.widths = item.table.widths.slice(0, slices);
 			}
 
+			var headerColumns = item.table.headerColumns || 0;
 			if (newTableBody.length && newTableWidths.length) {
-				var headerColumns = item.table.headerColumns || 0;
 				newTableBody.forEach(function (row, i) {
 					newTableBody[i] = _.cloneDeep(item.table.body[i].slice(0, headerColumns)).concat(newTableBody[i]);
 				});
@@ -157,8 +158,29 @@ LayoutBuilder.prototype.layoutDocument = function (docStructure, fontProvider, s
 				newItem.table.widths = newTableWidths;
 				docStructure.splice(itemIndex+1, 0, newItem);
 			}
+
+			var emptyRowIndexes = [];
+			item.table.body.forEach(function (row, i) {
+				var emptyRow = true;
+				for (var j = headerColumns; j < row.length; j++) {
+					if (row[j].positions.length) {
+						emptyRow = false;
+						break;
+					}
+				}
+
+				if (emptyRow) {
+					emptyRowIndexes.push(i);
+				}
+			});
+
+			// Remove rows with no data inside them, start with last index first so
+			// the index numbers doesn't change
+			for (var k = emptyRowIndexes.length-1; k >= 0; k--) {
+				item.table.body.splice(emptyRowIndexes[k], 1);
+			}
 		}
-	});
+	}
 
 	resetXYs(result);
 	result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
