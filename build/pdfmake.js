@@ -15074,6 +15074,7 @@
 
 	  var result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
 
+		var tempContext = new DocumentContext(this.pageSize, this.pageMargins);
 		for (var itemIndex = 0; itemIndex < docStructure.length; itemIndex++) {
 			var item = docStructure[itemIndex];
 			if (item.table) {
@@ -15081,10 +15082,7 @@
 				var newTableWidths = [];
 				var headerColumns = item.table.headerColumns || 0;
 
-
-				// TODO: Figure out correct way to get available width
-				var availableWidth = 500 - item._offsets.total;
-				while (ColumnCalculator.columnsAreTooWide(item.table.widths, availableWidth)) {
+				while (ColumnCalculator.columnsAreTooWide(item.table.widths, tempContext.availableWidth)) {
 					// Figure out how many columns should be sliced (we don't want to mess up colSpans)
 					// Note: we only look for colSpans on row 1 (which suits my specific use case)
 					var sliceFrom = item.table.body[0].length-1;
@@ -15095,6 +15093,7 @@
 					}
 
 					// If only the header columns will be left, we need to alter the colSpans
+					// so it's possible to split it in multiple rows.
 					if (sliceFrom === headerColumns) {
 						item.table.body[0][headerColumns].colSpan = Math.ceil(colSpanCount/2);
 
