@@ -120,33 +120,47 @@ LayoutBuilder.prototype.layoutDocument = function (docStructure, fontProvider, s
 		if (item.table) {
 			var newTableBody = [];
 			var newTableWidths = [];
+			var headerColumns = item.table.headerColumns || 0;
 
 			// TODO: Figure out correct way to get available width
 			var availableWidth = 500 - item._offsets.total;
 			while (ColumnCalculator.columnsAreTooWide(item.table.widths, availableWidth)) {
 				// Figure out how many columns should be sliced (we don't want to mess up colSpans)
-				var slices = item.table.body[0].length-1;
-				while (item.table.body[0][slices]._span) {
-					slices--;
+				// Note: we only look for colSpans on row 1 (which suits my specific use case)
+				var sliceFrom = item.table.body[0].length-1;
+				var colSpanCount = 1;
+				while (item.table.body[0][sliceFrom]._span) {
+					sliceFrom--;
+					colSpanCount++;
+				}
+
+				// If only the header columns will be left, we need to alter the colSpans
+				// so it's possible to split it in multiple rows.
+				if (sliceFrom === headerColumns) {
+					item.table.body[0][headerColumns].colSpan = Math.ceil(colSpanCount/2);
+
+					var rowColHeader = _.cloneDeep(item.table.body[0][headerColumns]);
+					rowColHeader.colSpan = Math.floor(colSpanCount/2);
+					item.table.body[0][(headerColumns + item.table.body[0][headerColumns].colSpan)] = rowColHeader;
+					continue;
 				}
 
 				// Slice and dice!
 				item.table.body.forEach(function (row, i) {
 					if (newTableBody.length > i) {
-						newTableBody[i] = item.table.body[i].slice(slices, row.length).concat(newTableBody[i]);
+						newTableBody[i] = item.table.body[i].slice(sliceFrom, row.length).concat(newTableBody[i]);
 					} else {
-						newTableBody.push(item.table.body[i].slice(slices, row.length));
+						newTableBody.push(item.table.body[i].slice(sliceFrom, row.length));
 					}
 
-					item.table.body[i] = item.table.body[i].slice(0, slices);
+					item.table.body[i] = item.table.body[i].slice(0, sliceFrom);
 				});
 
 				// Don't forget the widths array as well!
-				newTableWidths = item.table.widths.slice(slices, item.table.widths.length).concat(newTableWidths);
-				item.table.widths = item.table.widths.slice(0, slices);
+				newTableWidths = item.table.widths.slice(sliceFrom, item.table.widths.length).concat(newTableWidths);
+				item.table.widths = item.table.widths.slice(0, sliceFrom);
 			}
 
-			var headerColumns = item.table.headerColumns || 0;
 			if (newTableBody.length && newTableWidths.length) {
 				newTableBody.forEach(function (row, i) {
 					newTableBody[i] = _.cloneDeep(item.table.body[i].slice(0, headerColumns)).concat(newTableBody[i]);
