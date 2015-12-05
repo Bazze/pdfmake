@@ -15082,7 +15082,7 @@
 				var newTableWidths = [];
 				var headerColumns = item.table.headerColumns || 0;
 
-				while (ColumnCalculator.columnsAreTooWide(item.table.widths, tempContext.availableWidth)) {
+				while (ColumnCalculator.columnsAreTooWide(item.table.widths, tempContext.availableWidth - item._offsets.total)) {
 					// Figure out how many columns should be sliced (we don't want to mess up colSpans)
 					// Note: we only look for colSpans on row 1 (which suits my specific use case)
 					var sliceFrom = item.table.body[0].length-1;
