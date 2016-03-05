@@ -4,8 +4,6 @@
 'use strict';
 
 var PdfPrinter = require('../printer');
-var FileSaver = require('../../libs/FileSaver.js/FileSaver');
-var saveAs = FileSaver.saveAs;
 
 var defaultClientFonts = {
 	Roboto: {
@@ -94,7 +92,7 @@ Document.prototype.download = function(defaultFileName, cb) {
            blob = new Blob([result], { type: 'application/pdf' });
        }
        catch (e) {
-           // Old browser which can't handle it without making it an byte array (ie10) 
+           // Old browser which can't handle it without making it an byte array (ie10)
            if (e.name == "InvalidStateError") {
                var byteArray = new Uint8Array(result);
                blob = new Blob([byteArray.buffer], { type: 'application/pdf' });
