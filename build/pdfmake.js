@@ -15080,6 +15080,7 @@
 			if (item.table) {
 				var newTableBody = [];
 				var newTableWidths = [];
+				var newTableOffsets = [];
 				var headerColumns = item.table.headerColumns || 0;
 
 				while (ColumnCalculator.columnsAreTooWide(item.table.widths, tempContext.availableWidth - item._offsets.total)) {
@@ -15117,6 +15118,12 @@
 					// Don't forget the widths array as well!
 					newTableWidths = item.table.widths.slice(sliceFrom, item.table.widths.length).concat(newTableWidths);
 					item.table.widths = item.table.widths.slice(0, sliceFrom);
+
+					newTableOffsets = item._offsets.offsets.slice(sliceFrom, item._offsets.offsets.length).concat(newTableOffsets);
+					item._offsets.offsets = item._offsets.offsets.slice(0, sliceFrom);
+					item._offsets.total = item._offsets.offsets.reduce(function (a, b) {
+						return a + b;
+					}, 0);
 				}
 
 				if (newTableBody.length && newTableWidths.length) {
@@ -15128,6 +15135,10 @@
 					var newItem = _.cloneDeep(item);
 					newItem.table.body = newTableBody;
 					newItem.table.widths = newTableWidths;
+					newItem._offsets.offsets = newTableOffsets;
+					newItem._offsets.total = newTableOffsets.reduce(function (a, b) {
+						return a + b;
+					}, 0);
 					docStructure.splice(itemIndex+1, 0, newItem);
 				}
 
