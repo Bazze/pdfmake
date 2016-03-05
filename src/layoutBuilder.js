@@ -105,16 +105,110 @@ LayoutBuilder.prototype.layoutDocument = function (docStructure, fontProvider, s
     });
   }
 
+	function resetXYs(result) {
+		_.each(result.linearNodeList, function (node) {
+			node.resetXY();
+		});
+	}
+
   this.docMeasure = new DocMeasure(fontProvider, styleDictionary, defaultStyle, this.imageMeasure, this.tableLayouts, images);
 
-
-  function resetXYs(result) {
-    _.each(result.linearNodeList, function (node) {
-      node.resetXY();
-    });
-  }
-
   var result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+
+	var tempContext = new DocumentContext(this.pageSize, this.pageMargins);
+	for (var itemIndex = 0; itemIndex < docStructure.length; itemIndex++) {
+		var item = docStructure[itemIndex];
+		if (item.table) {
+			var newTableBody = [];
+			var newTableWidths = [];
+			var newTableOffsets = [];
+			var headerColumns = item.table.headerColumns || 0;
+
+			while (ColumnCalculator.columnsAreTooWide(item.table.widths, tempContext.availableWidth - item._offsets.total)) {
+				// Figure out how many columns should be sliced (we don't want to mess up colSpans)
+				// Note: we only look for colSpans on row 1 (which suits my specific use case)
+				var sliceFrom = item.table.body[0].length-1;
+				var colSpanCount = 1;
+				while (item.table.body[0][sliceFrom]._span) {
+					sliceFrom--;
+					colSpanCount++;
+				}
+
+				// If only the header columns will be left, we need to alter the colSpans
+				// so it's possible to split it in multiple rows.
+				if (sliceFrom === headerColumns) {
+					item.table.body[0][headerColumns].colSpan = Math.ceil(colSpanCount/2);
+
+					var rowColHeader = _.cloneDeep(item.table.body[0][headerColumns]);
+					rowColHeader.colSpan = Math.floor(colSpanCount/2);
+					item.table.body[0][(headerColumns + item.table.body[0][headerColumns].colSpan)] = rowColHeader;
+					continue;
+				}
+
+				// Slice and dice!
+				item.table.body.forEach(function (row, i) {
+					if (newTableBody.length > i) {
+						newTableBody[i] = item.table.body[i].slice(sliceFrom, row.length).concat(newTableBody[i]);
+					} else {
+						newTableBody.push(item.table.body[i].slice(sliceFrom, row.length));
+					}
+
+					item.table.body[i] = item.table.body[i].slice(0, sliceFrom);
+				});
+
+				// Don't forget the widths array as well!
+				newTableWidths = item.table.widths.slice(sliceFrom, item.table.widths.length).concat(newTableWidths);
+				item.table.widths = item.table.widths.slice(0, sliceFrom);
+
+				newTableOffsets = item._offsets.offsets.slice(sliceFrom, item._offsets.offsets.length).concat(newTableOffsets);
+				item._offsets.offsets = item._offsets.offsets.slice(0, sliceFrom);
+				item._offsets.total = item._offsets.offsets.reduce(function (a, b) {
+					return a + b;
+				}, 0);
+			}
+
+			if (newTableBody.length && newTableWidths.length) {
+				newTableBody.forEach(function (row, i) {
+					newTableBody[i] = _.cloneDeep(item.table.body[i].slice(0, headerColumns)).concat(newTableBody[i]);
+				});
+				newTableWidths = _.cloneDeep(item.table.widths.slice(0, headerColumns)).concat(newTableWidths);
+
+				var newItem = _.cloneDeep(item);
+				newItem.table.body = newTableBody;
+				newItem.table.widths = newTableWidths;
+				newItem._offsets.offsets = newTableOffsets;
+				newItem._offsets.total = newTableOffsets.reduce(function (a, b) {
+					return a + b;
+				}, 0);
+				docStructure.splice(itemIndex+1, 0, newItem);
+			}
+
+			var emptyRowIndexes = [];
+			item.table.body.forEach(function (row, i) {
+				var emptyRow = true;
+				for (var j = headerColumns; j < row.length; j++) {
+					if (row[j].positions.length) {
+						emptyRow = false;
+						break;
+					}
+				}
+
+				if (emptyRow) {
+					emptyRowIndexes.push(i);
+				}
+			});
+
+			// Remove rows with no data inside them, start with last index first so
+			// the index numbers doesn't change
+			for (var k = emptyRowIndexes.length-1; k >= 0; k--) {
+				item.table.body.splice(emptyRowIndexes[k], 1);
+			}
+		}
+	}
+
+	resetXYs(result);
+	result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+
   while(addPageBreaksIfNecessary(result.linearNodeList, result.pages)){
     resetXYs(result);
     result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
@@ -508,18 +602,18 @@ LayoutBuilder.prototype.processList = function(orderedList, node) {
 LayoutBuilder.prototype.processTable = function(tableNode) {
   var processor = new TableProcessor(tableNode);
 
-  processor.beginTable(this.writer);
+	processor.beginTable(this.writer);
 
-  for(var i = 0, l = tableNode.table.body.length; i < l; i++) {
-    processor.beginRow(i, this.writer);
+	for(var i = 0, l = tableNode.table.body.length; i < l; i++) {
+		processor.beginRow(i, this.writer);
 
-    var result = this.processRow(tableNode.table.body[i], tableNode.table.widths, tableNode._offsets.offsets, tableNode.table.body, i);
-    addAll(tableNode.positions, result.positions);
+		var result = this.processRow(tableNode.table.body[i], tableNode.table.widths, tableNode._offsets.offsets, tableNode.table.body, i);
+		addAll(tableNode.positions, result.positions);
 
-    processor.endRow(i, this.writer, result.pageBreaks);
-  }
+		processor.endRow(i, this.writer, result.pageBreaks);
+	}
 
-  processor.endTable(this.writer);
+	processor.endTable(this.writer);
 };
 
 // leafs (texts)

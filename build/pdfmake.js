@@ -1665,7 +1665,7 @@
 	      }
 
 	      // valid surrogate pair
-	      codePoint = leadSurrogate - 0xD800 << 10 | codePoint - 0xDC00 | 0x10000
+	      codePoint = (leadSurrogate - 0xD800 << 10 | codePoint - 0xDC00) + 0x10000
 	    } else if (leadSurrogate) {
 	      // valid bmp char, but last char was a lead
 	      if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
@@ -15064,16 +15064,110 @@
 	    });
 	  }
 
+		function resetXYs(result) {
+			_.each(result.linearNodeList, function (node) {
+				node.resetXY();
+			});
+		}
+
 	  this.docMeasure = new DocMeasure(fontProvider, styleDictionary, defaultStyle, this.imageMeasure, this.tableLayouts, images);
 
-
-	  function resetXYs(result) {
-	    _.each(result.linearNodeList, function (node) {
-	      node.resetXY();
-	    });
-	  }
-
 	  var result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+
+		var tempContext = new DocumentContext(this.pageSize, this.pageMargins);
+		for (var itemIndex = 0; itemIndex < docStructure.length; itemIndex++) {
+			var item = docStructure[itemIndex];
+			if (item.table) {
+				var newTableBody = [];
+				var newTableWidths = [];
+				var newTableOffsets = [];
+				var headerColumns = item.table.headerColumns || 0;
+
+				while (ColumnCalculator.columnsAreTooWide(item.table.widths, tempContext.availableWidth - item._offsets.total)) {
+					// Figure out how many columns should be sliced (we don't want to mess up colSpans)
+					// Note: we only look for colSpans on row 1 (which suits my specific use case)
+					var sliceFrom = item.table.body[0].length-1;
+					var colSpanCount = 1;
+					while (item.table.body[0][sliceFrom]._span) {
+						sliceFrom--;
+						colSpanCount++;
+					}
+
+					// If only the header columns will be left, we need to alter the colSpans
+					// so it's possible to split it in multiple rows.
+					if (sliceFrom === headerColumns) {
+						item.table.body[0][headerColumns].colSpan = Math.ceil(colSpanCount/2);
+
+						var rowColHeader = _.cloneDeep(item.table.body[0][headerColumns]);
+						rowColHeader.colSpan = Math.floor(colSpanCount/2);
+						item.table.body[0][(headerColumns + item.table.body[0][headerColumns].colSpan)] = rowColHeader;
+						continue;
+					}
+
+					// Slice and dice!
+					item.table.body.forEach(function (row, i) {
+						if (newTableBody.length > i) {
+							newTableBody[i] = item.table.body[i].slice(sliceFrom, row.length).concat(newTableBody[i]);
+						} else {
+							newTableBody.push(item.table.body[i].slice(sliceFrom, row.length));
+						}
+
+						item.table.body[i] = item.table.body[i].slice(0, sliceFrom);
+					});
+
+					// Don't forget the widths array as well!
+					newTableWidths = item.table.widths.slice(sliceFrom, item.table.widths.length).concat(newTableWidths);
+					item.table.widths = item.table.widths.slice(0, sliceFrom);
+
+					newTableOffsets = item._offsets.offsets.slice(sliceFrom, item._offsets.offsets.length).concat(newTableOffsets);
+					item._offsets.offsets = item._offsets.offsets.slice(0, sliceFrom);
+					item._offsets.total = item._offsets.offsets.reduce(function (a, b) {
+						return a + b;
+					}, 0);
+				}
+
+				if (newTableBody.length && newTableWidths.length) {
+					newTableBody.forEach(function (row, i) {
+						newTableBody[i] = _.cloneDeep(item.table.body[i].slice(0, headerColumns)).concat(newTableBody[i]);
+					});
+					newTableWidths = _.cloneDeep(item.table.widths.slice(0, headerColumns)).concat(newTableWidths);
+
+					var newItem = _.cloneDeep(item);
+					newItem.table.body = newTableBody;
+					newItem.table.widths = newTableWidths;
+					newItem._offsets.offsets = newTableOffsets;
+					newItem._offsets.total = newTableOffsets.reduce(function (a, b) {
+						return a + b;
+					}, 0);
+					docStructure.splice(itemIndex+1, 0, newItem);
+				}
+
+				var emptyRowIndexes = [];
+				item.table.body.forEach(function (row, i) {
+					var emptyRow = true;
+					for (var j = headerColumns; j < row.length; j++) {
+						if (row[j].positions.length) {
+							emptyRow = false;
+							break;
+						}
+					}
+
+					if (emptyRow) {
+						emptyRowIndexes.push(i);
+					}
+				});
+
+				// Remove rows with no data inside them, start with last index first so
+				// the index numbers doesn't change
+				for (var k = emptyRowIndexes.length-1; k >= 0; k--) {
+					item.table.body.splice(emptyRowIndexes[k], 1);
+				}
+			}
+		}
+
+		resetXYs(result);
+		result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
+
 	  while(addPageBreaksIfNecessary(result.linearNodeList, result.pages)){
 	    resetXYs(result);
 	    result = this.tryLayoutDocument(docStructure, fontProvider, styleDictionary, defaultStyle, background, header, footer, images, watermark);
@@ -15467,18 +15561,18 @@
 	LayoutBuilder.prototype.processTable = function(tableNode) {
 	  var processor = new TableProcessor(tableNode);
 
-	  processor.beginTable(this.writer);
+		processor.beginTable(this.writer);
 
-	  for(var i = 0, l = tableNode.table.body.length; i < l; i++) {
-	    processor.beginRow(i, this.writer);
+		for(var i = 0, l = tableNode.table.body.length; i < l; i++) {
+			processor.beginRow(i, this.writer);
 
-	    var result = this.processRow(tableNode.table.body[i], tableNode.table.widths, tableNode._offsets.offsets, tableNode.table.body, i);
-	    addAll(tableNode.positions, result.positions);
+			var result = this.processRow(tableNode.table.body[i], tableNode.table.widths, tableNode._offsets.offsets, tableNode.table.body, i);
+			addAll(tableNode.positions, result.positions);
 
-	    processor.endRow(i, this.writer, result.pageBreaks);
-	  }
+			processor.endRow(i, this.writer, result.pageBreaks);
+		}
 
-	  processor.endTable(this.writer);
+		processor.endTable(this.writer);
 	};
 
 	// leafs (texts)
@@ -16569,6 +16663,49 @@
 	/* jslint node: true */
 	'use strict';
 
+	function columnsAreTooWide(columns, availableWidth) {
+		var autoColumns = [],
+			autoMin = 0, autoMax = 0,
+			starColumns = [],
+			starMaxMin = 0,
+			starMaxMax = 0,
+			fixedColumns = [],
+			initial_availableWidth = availableWidth;
+
+		columns.forEach(function(column) {
+			if (isAutoColumn(column)) {
+				autoColumns.push(column);
+				autoMin += column._minWidth;
+				autoMax += column._maxWidth;
+			} else if (isStarColumn(column)) {
+				starColumns.push(column);
+				starMaxMin = Math.max(starMaxMin, column._minWidth);
+				starMaxMax = Math.max(starMaxMax, column._maxWidth);
+			} else {
+				fixedColumns.push(column);
+			}
+		});
+
+		fixedColumns.forEach(function(col) {
+			// width specified as %
+			if (typeof col.width === 'string' && /\d+%/.test(col.width) ) {
+				col.width = parseFloat(col.width)*initial_availableWidth/100;
+			}
+			if (col.width < (col._minWidth) && col.elasticWidth) {
+				col._calcWidth = col._minWidth;
+			} else {
+				col._calcWidth = col.width;
+			}
+
+			availableWidth -= col._calcWidth;
+		});
+
+		var minW = autoMin + starMaxMin * starColumns.length;
+		//var maxW = autoMax + starMaxMax * starColumns.length;
+
+		return minW >= availableWidth;
+	}
+
 	function buildColumnWidths(columns, availableWidth) {
 		var autoColumns = [],
 			autoMin = 0, autoMax = 0,
@@ -16696,6 +16833,7 @@
 	* @private
 	*/
 	module.exports = {
+		columnsAreTooWide: columnsAreTooWide,
 		buildColumnWidths: buildColumnWidths,
 		measureMinMax: measureMinMax,
 		isAutoColumn: isAutoColumn,
@@ -20426,8 +20564,12 @@
 
 	// NOTE: These type checking functions intentionally don't use `instanceof`
 	// because it is fragile and can be easily faked with `Object.create()`.
-	function isArray(ar) {
-	  return Array.isArray(ar);
+
+	function isArray(arg) {
+	  if (Array.isArray) {
+	    return Array.isArray(arg);
+	  }
+	  return objectToString(arg) === '[object Array]';
 	}
 	exports.isArray = isArray;
 
@@ -20467,7 +20609,7 @@
 	exports.isUndefined = isUndefined;
 
 	function isRegExp(re) {
-	  return isObject(re) && objectToString(re) === '[object RegExp]';
+	  return objectToString(re) === '[object RegExp]';
 	}
 	exports.isRegExp = isRegExp;
 
@@ -20477,13 +20619,12 @@
 	exports.isObject = isObject;
 
 	function isDate(d) {
-	  return isObject(d) && objectToString(d) === '[object Date]';
+	  return objectToString(d) === '[object Date]';
 	}
 	exports.isDate = isDate;
 
 	function isError(e) {
-	  return isObject(e) &&
-	      (objectToString(e) === '[object Error]' || e instanceof Error);
+	  return (objectToString(e) === '[object Error]' || e instanceof Error);
 	}
 	exports.isError = isError;
 
@@ -20502,14 +20643,12 @@
 	}
 	exports.isPrimitive = isPrimitive;
 
-	function isBuffer(arg) {
-	  return Buffer.isBuffer(arg);
-	}
-	exports.isBuffer = isBuffer;
+	exports.isBuffer = Buffer.isBuffer;
 
 	function objectToString(o) {
 	  return Object.prototype.toString.call(o);
 	}
+
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(2).Buffer))
 
 /***/ },
@@ -67874,10 +68013,10 @@
 
 	var __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/* FileSaver.js
 	 * A saveAs() FileSaver implementation.
-	 * 1.1.20150716
+	 * 1.1.20151003
 	 *
 	 * By Eli Grey, http://eligrey.com
-	 * License: X11/MIT
+	 * License: MIT
 	 *   See https://github.com/eligrey/FileSaver.js/blob/master/LICENSE.md
 	 */
 
@@ -67904,6 +68043,7 @@
 				var event = new MouseEvent("click");
 				node.dispatchEvent(event);
 			}
+			, is_safari = /Version\/[\d\.]+.*Safari/.test(navigator.userAgent)
 			, webkit_req_fs = view.webkitRequestFileSystem
 			, req_fs = view.requestFileSystem || webkit_req_fs || view.mozRequestFileSystem
 			, throw_outside = function(ex) {
@@ -67968,6 +68108,19 @@
 					}
 					// on any filesys errors revert to saving with object URLs
 					, fs_error = function() {
+						if (target_view && is_safari && typeof FileReader !== "undefined") {
+							// Safari doesn't allow downloading of blob urls
+							var reader = new FileReader();
+							reader.onloadend = function() {
+								var base64Data = reader.result;
+								target_view.location.href = "data:attachment/file" + base64Data.slice(base64Data.search(/[,;]/));
+								filesaver.readyState = filesaver.DONE;
+								dispatch_all();
+							};
+							reader.readAsDataURL(blob);
+							filesaver.readyState = filesaver.INIT;
+							return;
+						}
 						// don't create more object URLs than needed
 						if (blob_changed || !object_url) {
 							object_url = get_URL().createObjectURL(blob);
@@ -67976,7 +68129,7 @@
 							target_view.location.href = object_url;
 						} else {
 							var new_tab = view.open(object_url, "_blank");
-							if (new_tab == undefined && typeof safari !== "undefined") {
+							if (new_tab == undefined && is_safari) {
 								//Apple do not allow window.open, see http://bit.ly/1kZffRI
 								view.location.href = object_url
 							}
