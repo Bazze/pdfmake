@@ -45,7 +45,15 @@ module.exports = function(grunt) {
 					from: 'this.constructor.name.replace',
 					to: '(this.constructor.name || this.constructor.toString().match(/function (.{1,})\\(/)[1]).replace'
 				}]
-			}
+			},
+			maxSafeInteger: {
+				src: ['build/pdfmake*.js'],
+				overwrite: true,
+				replacements: [{
+					from: 'var chunk = stream.read();',
+					to: 'var chunk = stream.read(Number.MAX_SAFE_INTEGER);'
+				}]
+			},
 		},
 
 		mochacov: {
@@ -134,7 +142,7 @@ module.exports = function(grunt) {
   	});
 
 	grunt.registerTask('buildFonts', [ 'dump_dir', 'fixVfsFonts' ]);
-	grunt.registerTask('build', [ 'replace:fixPdfKit', 'browserify', 'uglify', 'buildFonts' ]);
+	grunt.registerTask('build', [ 'replace:fixPdfKit', 'browserify', 'replace:maxSafeInteger', 'uglify', 'buildFonts' ]);
 
 	grunt.registerTask('default', [ 'test', 'build' ]);
 };

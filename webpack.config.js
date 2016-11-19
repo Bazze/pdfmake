@@ -24,6 +24,14 @@ module.exports = {
             replacement: ''
           }
         ]})
+      },
+      { loader: StringReplacePlugin.replace({
+        replacements: [
+          {
+            pattern: 'var chunk = stream.read();',
+            replacement: 'var chunk = stream.read(Number.MAX_SAFE_INTEGER);'
+          }
+        ]})
       }
     ]
   },
