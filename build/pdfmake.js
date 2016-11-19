@@ -2251,7 +2251,6 @@
 	var sizes = __webpack_require__(102);
 	var ImageMeasure = __webpack_require__(103);
 	var textDecorator = __webpack_require__(104);
-	var FontProvider = __webpack_require__(9);
 
 	_.noConflict();
 
@@ -16528,7 +16527,7 @@
 	* @return {Object}                   size of the specified string
 	*/
 	TextTools.prototype.sizeOfString = function(text, styleContextStack) {
-		text = text.replace('\t', '    ');
+		text = text ? text.replace('\t', '    ') : '';
 
 		//TODO: refactor - extract from measure
 		var fontName = getStyleProperty({}, styleContextStack, 'font', 'Roboto');
@@ -16551,7 +16550,7 @@
 
 	function splitWords(text, noWrap) {
 		var results = [];
-		text = text.replace('\t', '    ');
+		text = text ? text.replace('\t', '    ') : '';
 
 		var array;
 		if (noWrap) {
@@ -18433,7 +18432,11 @@
 			return false;
 		}
 
-		image.x = context.x + (image.x || 0);
+		if (image._x === undefined) {
+			image._x = image.x || 0;
+		}
+
+		image.x = context.x + image._x;
 		image.y = context.y;
 
 		this.alignImage(image);
