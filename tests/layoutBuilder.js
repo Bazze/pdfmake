@@ -28,7 +28,7 @@ var sampleTestProvider = {
 				return size;
 			},
 			ascender: 150,
-			descender: -50
+			decender: -50
 		}
 	}
 };

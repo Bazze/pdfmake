@@ -252,52 +252,71 @@ function renderPages(pages, fontProvider, pdfKitDoc) {
     }
     if(page.watermark){
       renderWatermark(page, pdfKitDoc);
-    }
+	}
+
+    fontProvider.setFontRefsToPdfDoc();
   }
 }
 
 function renderLine(line, x, y, pdfKitDoc) {
-  x = x || 0;
-  y = y || 0;
+	x = x || 0;
+	y = y || 0;
 
-  textDecorator.drawBackground(line, x, y, pdfKitDoc);
+	var lineHeight = line.getHeight();
+	var ascenderHeight = line.getAscenderHeight();
 
-  //TODO: line.optimizeInlines();
-  for(var i = 0, l = line.inlines.length; i < l; i++) {
-  	var inline = line.inlines[i];
+	textDecorator.drawBackground(line, x, y, pdfKitDoc);
 
-  	pdfKitDoc.fill(inline.color || 'black');
+	//TODO: line.optimizeInlines();
+	for(var i = 0, l = line.inlines.length; i < l; i++) {
+		var inline = line.inlines[i];
 
-    pdfKitDoc._font = inline.font;
-    pdfKitDoc.fontSize(inline.fontSize);
-    pdfKitDoc.text(inline.text, x + inline.x, y, {
-      lineBreak: false,
-      link: inline.link
-    });
-  }
+		pdfKitDoc.fill(inline.color || 'black');
 
-  textDecorator.drawDecorations(line, x, y, pdfKitDoc);
+		pdfKitDoc.save();
+		pdfKitDoc.transform(1, 0, 0, -1, 0, pdfKitDoc.page.height);
+
+
+    var encoded = inline.font.encode(inline.text);
+		pdfKitDoc.addContent('BT');
+
+		pdfKitDoc.addContent('' + (x + inline.x) + ' ' + (pdfKitDoc.page.height - y - ascenderHeight) + ' Td');
+		pdfKitDoc.addContent('/' + encoded.fontId + ' ' + inline.fontSize + ' Tf');
+
+        pdfKitDoc.addContent('<' + encoded.encodedText + '> Tj');
+
+		pdfKitDoc.addContent('ET');
+
+		if (inline.link) {
+			pdfKitDoc.link(x + inline.x, pdfKitDoc.page.height - y - lineHeight, inline.width, lineHeight, inline.link);
+		}
+
+		pdfKitDoc.restore();
+	}
+
+	textDecorator.drawDecorations(line, x, y, pdfKitDoc);
+
 }
 
 function renderWatermark(page, pdfKitDoc){
-  var watermark = page.watermark;
+	var watermark = page.watermark;
 
-  pdfKitDoc.fill('black');
-  pdfKitDoc.opacity(0.6);
+	pdfKitDoc.fill('black');
+	pdfKitDoc.opacity(0.6);
 
-  pdfKitDoc.save();
+	pdfKitDoc.save();
+	pdfKitDoc.transform(1, 0, 0, -1, 0, pdfKitDoc.page.height);
 
-  var angle = Math.atan2(pdfKitDoc.page.height, pdfKitDoc.page.width) * -180/Math.PI;
-  pdfKitDoc.rotate(angle, {origin: [pdfKitDoc.page.width/2, pdfKitDoc.page.height/2]});
+	var angle = Math.atan2(pdfKitDoc.page.height, pdfKitDoc.page.width) * 180/Math.PI;
+	pdfKitDoc.rotate(angle, {origin: [pdfKitDoc.page.width/2, pdfKitDoc.page.height/2]});
 
-  var x = pdfKitDoc.page.width / 2 - watermark.size.size.width / 2;
-  var y = pdfKitDoc.page.height / 2 - watermark.size.size.height / 4;
-
-  pdfKitDoc._font = watermark.font;
-  pdfKitDoc.fontSize(watermark.size.fontSize);
-  pdfKitDoc.text(watermark.text, x, y, {lineBreak: false});
-
-  pdfKitDoc.restore();
+  var encoded = watermark.font.encode(watermark.text);
+	pdfKitDoc.addContent('BT');
+	pdfKitDoc.addContent('' + (pdfKitDoc.page.width/2 - watermark.size.size.width/2) + ' ' + (pdfKitDoc.page.height/2 - watermark.size.size.height/4) + ' Td');
+	pdfKitDoc.addContent('/' + encoded.fontId + ' ' + watermark.size.fontSize + ' Tf');
+	pdfKitDoc.addContent('<' + encoded.encodedText + '> Tj');
+	pdfKitDoc.addContent('ET');
+	pdfKitDoc.restore();
 }
 
 function renderVector(vector, pdfDoc) {
