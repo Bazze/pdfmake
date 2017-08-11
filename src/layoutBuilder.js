@@ -200,7 +200,7 @@ LayoutBuilder.prototype.layoutDocument = function (docStructure, fontProvider, s
 
 			// Remove rows with no data inside them, start with last index first so
 			// the index numbers doesn't change
-			for (var k = emptyRowIndexes.length-1; k >= 0; k--) {
+			for (var k = emptyRowIndexes.length-1; k >= 0 && (!item.table.headerRows || item.table.body.length > item.table.headerRows); k--) {
 				item.table.body.splice(emptyRowIndexes[k], 1);
 			}
 		}
